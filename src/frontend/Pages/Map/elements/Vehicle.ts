@@ -173,6 +173,8 @@ class Vehicle extends InfoWindowElement {
             const hour = new Date().getHours();
             lines.push(hour >= 20 || hour < 5 ? "Done for the night" : "Going out of service");
         } else if (nextStop) lines.push((metro?.stopped || atStop ? "At stop: " : "Next stop: ") + nextStop + (!(metro?.stopped || atStop) && eta !== undefined && eta >= 0 ? ` (${eta === 0 ? "now" : eta + " min"})` : ""));
+        // No trip assigned (e.g. Peak sends nextStopID 0 at a layover): GPS is live but there's no stop or schedule
+        else if (!info.nextStopID && metro?.delayMinutes === undefined) lines.push("Between trips (no stop info yet)");
         if (metro?.delayMinutes !== undefined)
             lines.push(metro.delayMinutes > 1 ? `About ${metro.delayMinutes} min late` : metro.delayMinutes < -1 ? `About ${-metro.delayMinutes} min early` : "On time");
 
