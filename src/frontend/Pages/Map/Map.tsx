@@ -1,7 +1,5 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "maplibre-gl/dist/maplibre-gl.css";
-import "@maplibre/maplibre-gl-leaflet";
 
 import { useEffect, useRef, useState } from "react";
 
@@ -129,6 +127,39 @@ function addBuildingNames(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>) {
         .catch(() => {});
 }
 
+// maplibre-gl is ~1 MB, so it loads after the map shell paints instead of blocking first paint
+async function addBasemap(leafletMap: L.Map) {
+    await Promise.all([import("maplibre-gl/dist/maplibre-gl.css"), import("@maplibre/maplibre-gl-leaflet")]);
+    // OpenFreeMap's Liberty (free, no key; keeps place icons), toned down so routes and stops stand out
+    const basemap = L.maplibreGL({
+        style: "https://tiles.openfreemap.org/styles/liberty",
+    }).addTo(leafletMap);
+    const gl = basemap.getMaplibreMap();
+    // Restyle once the style's layers exist (it may load before or after this runs)
+    const restyle = () => {
+        for (const [layer, property, color] of BASEMAP_COLORS)
+            if (gl.getLayer(layer)) gl.setPaintProperty(layer, property as any, color);
+        for (const layer of BASEMAP_HIDDEN)
+            if (gl.getLayer(layer)) gl.setLayoutProperty(layer, "visibility", "none");
+    };
+    if (gl.isStyleLoaded()) restyle(); else gl.once("load", restyle);
+    addBuildingNames(gl);
+    // After sunset in Minneapolis the basemap goes dark (inverted, so labels follow); routes and stops keep their colors
+    let night: boolean | undefined;
+    const applyTheme = () => {
+        const now = isNight();
+        if (now === night) return;
+        night = now;
+        gl.getContainer().style.filter = now ? "invert(1) hue-rotate(180deg)" : "";
+        // Day colors come back first, so night only overrides what it changes
+        for (const [layer, property, color] of now ? [...BASEMAP_COLORS, ...BASEMAP_NIGHT_COLORS] : BASEMAP_COLORS)
+            if (gl.getLayer(layer)) gl.setPaintProperty(layer, property as any, color);
+    };
+    // Restyle runs once the style loads, so apply the theme after it
+    if (gl.isStyleLoaded()) applyTheme(); else gl.once("load", () => { night = undefined; applyTheme(); });
+    setInterval(applyTheme, 60000);
+}
+
 export default function MapPage({ hidden, setPage, isMobile }) {
     const [mapLoaded, setMapLoaded] = useState(false);
     const [map, setMap] = useState<L.Map | null>(null);
@@ -157,34 +188,7 @@ export default function MapPage({ hidden, setPage, isMobile }) {
                 minZoom: 10,
             }).setView(UMNLocation, defaultZoom);
             L.control.zoom({ position: "bottomright" }).addTo(leafletMap);
-            // OpenFreeMap's Liberty (free, no key; keeps place icons), toned down so routes and stops stand out
-            const basemap = L.maplibreGL({
-                style: "https://tiles.openfreemap.org/styles/liberty",
-            }).addTo(leafletMap);
-            const gl = basemap.getMaplibreMap();
-            // Restyle once the style's layers exist (it may load before or after this runs)
-            const restyle = () => {
-                for (const [layer, property, color] of BASEMAP_COLORS)
-                    if (gl.getLayer(layer)) gl.setPaintProperty(layer, property as any, color);
-                for (const layer of BASEMAP_HIDDEN)
-                    if (gl.getLayer(layer)) gl.setLayoutProperty(layer, "visibility", "none");
-            };
-            if (gl.isStyleLoaded()) restyle(); else gl.once("load", restyle);
-            addBuildingNames(gl);
-            // After sunset in Minneapolis the basemap goes dark (inverted, so labels follow); routes and stops keep their colors
-            let night: boolean | undefined;
-            const applyTheme = () => {
-                const now = isNight();
-                if (now === night) return;
-                night = now;
-                gl.getContainer().style.filter = now ? "invert(1) hue-rotate(180deg)" : "";
-                // Day colors come back first, so night only overrides what it changes
-                for (const [layer, property, color] of now ? [...BASEMAP_COLORS, ...BASEMAP_NIGHT_COLORS] : BASEMAP_COLORS)
-                    if (gl.getLayer(layer)) gl.setPaintProperty(layer, property as any, color);
-            };
-            // Restyle runs once the style loads, so apply the theme after it
-            if (gl.isStyleLoaded()) applyTheme(); else gl.once("load", () => { night = undefined; applyTheme(); });
-            setInterval(applyTheme, 60000);
+            addBasemap(leafletMap);
             setMap(leafletMap);
             currentMap = leafletMap;
         }
