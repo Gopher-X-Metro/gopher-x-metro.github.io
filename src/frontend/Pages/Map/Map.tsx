@@ -54,22 +54,41 @@ const BASEMAP_COLORS: [string, string, string][] = [
     ["bridge_path_pedestrian", "line-color", "#a9d8a9"],
 ];
 
-// At night the basemap is inverted, so these are set light-side-up: buildings, outlines, roads and casings
-// are pushed further from the background so their shapes stay readable once dark
-const BASEMAP_NIGHT_COLORS: [string, string, string][] = [
-    ["background", "background-color", "#d0d0ce"],
-    ["landuse_residential", "fill-color", "#d0d0ce"],
-    ["building", "fill-color", "#97938b"],
-    ["building", "fill-outline-color", "#615e58"],
-    ["building-3d", "fill-extrusion-color", "#97938b"],
-    ["road_trunk_primary", "line-color", "#a0a0a0"],
-    ["road_secondary_tertiary", "line-color", "#a0a0a0"],
-    ["bridge_trunk_primary", "line-color", "#a0a0a0"],
-    ["bridge_secondary_tertiary", "line-color", "#a0a0a0"],
-    ["road_trunk_primary_casing", "line-color", "#6e6e6e"],
-    ["road_secondary_tertiary_casing", "line-color", "#6e6e6e"],
-    ["road_motorway_casing", "line-color", "#6e6e6e"],
-];
+// Night palette after Google Maps' dark theme: charcoal ground, buildings a step lighter, blue-gray roads.
+// Painted per layer instead of a CSS invert filter, which re-filters the whole canvas every frame while dragging
+const NIGHT = {
+    ground: "#212226", land: "#26272b", building: "#2e2f34", buildingEdge: "#393a40",
+    park: "#1c3324", grass: "#21302a", water: "#17263c",
+    minor: "#363f4c", major: "#44546a", highway: "#5a7190", casing: "#23272e", path: "#2c4232", rail: "#4a4d55",
+    text: "#9aa0a6", halo: "#1b1c1f",
+};
+
+/** Night colors for every basemap layer, chosen by layer type and name */
+function nightColors(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>) : [string, string, string | number][] {
+    const colors: [string, string, string | number][] = [];
+    for (const { id, type } of gl.getStyle().layers) {
+        if (type === "background") colors.push([id, "background-color", NIGHT.ground]);
+        else if (type === "symbol") {
+            // Shields and arrows carry their own badge colors
+            if (!/shield|arrow/.test(id)) colors.push([id, "text-color", NIGHT.text], [id, "text-halo-color", NIGHT.halo]);
+        } else if (type === "fill-extrusion") colors.push([id, "fill-extrusion-color", NIGHT.building]);
+        else if (type === "fill") {
+            // A white hatch image that a color can't tint, so it's faded instead
+            if (id === "road_area_pattern") { colors.push([id, "fill-opacity", 0.08]); continue; }
+            const color = id === "building" ? NIGHT.building : id === "water" ? NIGHT.water
+                : /park|wood/.test(id) ? NIGHT.park : /grass|pitch|wetland/.test(id) ? NIGHT.grass
+                : id === "landuse_residential" ? NIGHT.ground : NIGHT.land;
+            colors.push([id, "fill-color", color]);
+            if (id === "building") colors.push([id, "fill-outline-color", NIGHT.buildingEdge]);
+        } else if (type === "line" && !/boundary/.test(id)) {
+            const color = /waterway/.test(id) ? NIGHT.water : /park/.test(id) ? NIGHT.park
+                : /casing/.test(id) ? NIGHT.casing : /rail/.test(id) ? NIGHT.rail : /path_pedestrian/.test(id) ? NIGHT.path
+                : /motorway/.test(id) ? NIGHT.highway : /trunk_primary|secondary_tertiary/.test(id) ? NIGHT.major : NIGHT.minor;
+            colors.push([id, "line-color", color]);
+        }
+    }
+    return colors;
+}
 
 // The map's own transit icons would double up with this site's stops
 const BASEMAP_HIDDEN = ["poi_transit"];
@@ -99,9 +118,10 @@ function isNight(now = new Date()) : boolean {
 
 /**
  * Labels campus buildings when zoomed in close, since the basemap leaves most of them unnamed
- * @param gl    the basemap's MapLibre map, which draws the labels
+ * @param gl      the basemap's MapLibre map, which draws the labels
+ * @param onAdded runs once the labels are on the map
  */
-function addBuildingNames(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>) {
+function addBuildingNames(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>, onAdded: () => void) {
     fetch(process.env.PUBLIC_URL + "/data/campus-buildings.json")
         .then(response => response.json())
         .then(buildings => {
@@ -121,6 +141,7 @@ function addBuildingNames(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>) {
                     },
                     paint: { "text-color": "#5f5f5f", "text-halo-color": "#ffffff", "text-halo-width": 1.2 },
                 });
+                onAdded();
             };
             if (gl.isStyleLoaded()) addLabels(); else gl.once("load", addLabels);
         })
@@ -143,18 +164,26 @@ async function addBasemap(leafletMap: L.Map) {
             if (gl.getLayer(layer)) gl.setLayoutProperty(layer, "visibility", "none");
     };
     if (gl.isStyleLoaded()) restyle(); else gl.once("load", restyle);
-    addBuildingNames(gl);
-    // After sunset in Minneapolis the basemap goes dark (inverted, so labels follow); routes and stops keep their colors
+    // After sunset in Minneapolis the basemap goes dark; routes and stops keep their colors
     let night: boolean | undefined;
+    // Day paint of each property night overrides, so sunrise can put it back
+    const dayPaint = new Map<string, [string, string, any]>();
     const applyTheme = () => {
         const now = isNight();
         if (now === night) return;
         night = now;
-        gl.getContainer().style.filter = now ? "invert(1) hue-rotate(180deg)" : "";
-        // Day colors come back first, so night only overrides what it changes
-        for (const [layer, property, color] of now ? [...BASEMAP_COLORS, ...BASEMAP_NIGHT_COLORS] : BASEMAP_COLORS)
-            if (gl.getLayer(layer)) gl.setPaintProperty(layer, property as any, color);
+        if (now) {
+            for (const [layer, property, color] of nightColors(gl)) {
+                const key = layer + "|" + property;
+                if (!dayPaint.has(key)) dayPaint.set(key, [layer, property, gl.getPaintProperty(layer, property as any)]);
+                gl.setPaintProperty(layer, property as any, color);
+            }
+        } else {
+            for (const [layer, property, color] of dayPaint.values()) gl.setPaintProperty(layer, property as any, color);
+        }
     };
+    // The campus labels arrive after the theme first runs, so they get it reapplied
+    addBuildingNames(gl, () => { night = undefined; applyTheme(); });
     // Restyle runs once the style loads, so apply the theme after it
     if (gl.isStyleLoaded()) applyTheme(); else gl.once("load", () => { night = undefined; applyTheme(); });
     setInterval(applyTheme, 60000);
