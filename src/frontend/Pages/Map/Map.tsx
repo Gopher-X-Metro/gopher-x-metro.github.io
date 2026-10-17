@@ -143,13 +143,15 @@ function addBuildingNames(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>, onAdde
                 });
                 onAdded();
             };
-            if (gl.isStyleLoaded()) addLabels(); else gl.once("load", addLabels);
+            if (gl.isStyleLoaded()) addLabels(); else gl.once("style.load", addLabels);
         })
         .catch(() => {});
 }
 
 // maplibre-gl is ~1 MB, so it loads after the map shell paints instead of blocking first paint
 async function addBasemap(leafletMap: L.Map) {
+    // The empty map shows while maplibre downloads, so at night it starts dark rather than flashing light
+    if (isNight()) leafletMap.getContainer().style.background = NIGHT.ground;
     await Promise.all([import("maplibre-gl/dist/maplibre-gl.css"), import("@maplibre/maplibre-gl-leaflet")]);
     // OpenFreeMap's Liberty (free, no key; keeps place icons), toned down so routes and stops stand out
     const basemap = L.maplibreGL({
@@ -163,7 +165,7 @@ async function addBasemap(leafletMap: L.Map) {
         for (const layer of BASEMAP_HIDDEN)
             if (gl.getLayer(layer)) gl.setLayoutProperty(layer, "visibility", "none");
     };
-    if (gl.isStyleLoaded()) restyle(); else gl.once("load", restyle);
+    if (gl.isStyleLoaded()) restyle(); else gl.once("style.load", restyle);
     // After sunset in Minneapolis the basemap goes dark; routes and stops keep their colors
     let night: boolean | undefined;
     // Day paint of each property night overrides, so sunrise can put it back
@@ -184,8 +186,8 @@ async function addBasemap(leafletMap: L.Map) {
     };
     // The campus labels arrive after the theme first runs, so they get it reapplied
     addBuildingNames(gl, () => { night = undefined; applyTheme(); });
-    // Restyle runs once the style loads, so apply the theme after it
-    if (gl.isStyleLoaded()) applyTheme(); else gl.once("load", () => { night = undefined; applyTheme(); });
+    // style.load fires before tiles paint, so night never flashes the day colors first (load waits for a full render)
+    if (gl.isStyleLoaded()) applyTheme(); else gl.once("style.load", () => { night = undefined; applyTheme(); });
     setInterval(applyTheme, 60000);
 }
 
