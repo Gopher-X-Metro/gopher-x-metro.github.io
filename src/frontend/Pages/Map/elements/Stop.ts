@@ -230,6 +230,9 @@ class Stop extends InfoWindowElement {
 
 const DEPARTURES_SHOWN = 5;
 
+// Below this zoom, bus stops ~250 m apart are closer than a stop dot is wide
+const STOPS_MIN_ZOOM = 14;
+
 // Stops with upcoming buses stand out; ones without fade back
 const STOP_ACTIVE = "#1f5fbf";
 const STOP_IDLE = "#9aa3ad";
@@ -242,7 +245,14 @@ const chipLabel = (routeId: string) => routeLabel(routeId).replace(/^(Blue|Green
 
 /** Stops get their own layer above route lines, so a line never covers a stop's tap target */
 function stopPane(map: L.Map) : string {
-    if (!map.getPane("stops")) map.createPane("stops").style.zIndex = "450";
+    if (!map.getPane("stops")) {
+        const pane = map.createPane("stops");
+        pane.style.zIndex = "450";
+        // Zoomed out, a route's stops pile into one thick smear, so they hide until there's room to tell them apart
+        const fit = () => { pane.style.display = map.getZoom() < STOPS_MIN_ZOOM ? "none" : ""; };
+        map.on("zoomend", fit);
+        fit();
+    }
     return "stops";
 }
 
