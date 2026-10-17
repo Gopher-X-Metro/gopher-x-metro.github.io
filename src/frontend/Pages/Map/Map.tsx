@@ -73,8 +73,8 @@ function nightColors(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>) : [string, 
             if (!/shield|arrow/.test(id)) colors.push([id, "text-color", NIGHT.text], [id, "text-halo-color", NIGHT.halo]);
         } else if (type === "fill-extrusion") colors.push([id, "fill-extrusion-color", NIGHT.building]);
         else if (type === "fill") {
-            // A white hatch image that a color can't tint, so it's faded instead
-            if (id === "road_area_pattern") { colors.push([id, "fill-opacity", 0.08]); continue; }
+            // Light pattern images (pedestrian hatch, wetland grass) that a color can't tint, so they're faded instead
+            if (id === "road_area_pattern" || id === "landcover_wetland") { colors.push([id, "fill-opacity", 0.08]); continue; }
             const color = id === "building" ? NIGHT.building : id === "water" ? NIGHT.water
                 : /park|wood/.test(id) ? NIGHT.park : /grass|pitch|wetland/.test(id) ? NIGHT.grass
                 : id === "landuse_residential" ? NIGHT.ground : NIGHT.land;
@@ -90,8 +90,13 @@ function nightColors(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>) : [string, 
     return colors;
 }
 
-// The map's own transit icons would double up with this site's stops
-const BASEMAP_HIDDEN = ["poi_transit"];
+// The map's own transit icons would double up with this site's stops, and road number shields and
+// one-way arrows are clutter next to the bus routes (street names stay, they're how riders find stops)
+const BASEMAP_HIDDEN = [
+    "poi_transit",
+    "road_shield_us", "highway-shield-us-interstate", "highway-shield-non-us",
+    "road_one_way_arrow", "road_one_way_arrow_opposite",
+];
 
 const MPLS = { lat: 44.9778, lng: -93.265 };
 
