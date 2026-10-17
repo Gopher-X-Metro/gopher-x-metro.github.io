@@ -20,7 +20,8 @@ export default defineConfig(({ mode }) => {
           // Separate vendor chunks cache independently of app code and download in parallel
           manualChunks(id) {
             if (!id.includes("node_modules")) return;
-            if (id.includes("leaflet")) return "leaflet";
+            // maplibre (and its leaflet bridge) stay in their own lazy chunk
+            if (id.includes("/node_modules/leaflet/")) return "leaflet";
             if (id.includes("@chakra-ui") || id.includes("@emotion") || id.includes("@ark-ui") || id.includes("@zag-js")) return "chakra";
             if (id.includes("gtfs-realtime-bindings") || id.includes("protobufjs")) return "gtfs-rt";
           },
