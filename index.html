@@ -24,7 +24,7 @@
 
     <meta charset="utf-8" />
     <!-- Opens connections to the map and live data hosts while the app's JS downloads -->
-    <link rel="preconnect" href="https://tile.openstreetmap.org" />
+    <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
     <link rel="preconnect" href="https://svc.metrotransit.org" crossorigin />
     <link rel="preconnect" href="https://api.peaktransit.com" crossorigin />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -36,7 +36,12 @@
     <title>Gopher X Metro</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static header painted before the JS loads (React replaces it on mount) -->
+      <div style="position:fixed;top:0;left:0;width:100%;height:10%;background:#7a0019;display:flex;align-items:center;padding:0 16px 0 60px;box-sizing:border-box;font:bold clamp(24px,4vw,36px)/1.2 sans-serif">
+        <span style="color:#FFCC33">Gopher&nbsp;</span><span style="color:#FFCC33">X</span><span style="color:#0053A0">&nbsp;Metro</span>
+      </div>
+    </div>
     <script type="module" src="/src/index.jsx"></script>
     <!-- Cloudflare Web Analytics -->
     <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "d7c2d43a474b4cda997a67f2da968e3f"}'></script>
