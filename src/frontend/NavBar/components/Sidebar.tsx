@@ -56,7 +56,8 @@ export default function SideBar() {
     useEffect(() => {
         // Allows the user to hit "Enter" to enter a route
         const searchBox = document.getElementById("search_route");
-        searchBox?.addEventListener("keydown", event => event.code === "Enter" ? SearchFeature.searchRoute() : null);
+        const onEnter = (event: KeyboardEvent) => event.code === "Enter" ? SearchFeature.searchRoute() : null;
+        searchBox?.addEventListener("keydown", onEnter);
 
         /**
          * Convert a string to a properly cased title
@@ -81,18 +82,20 @@ export default function SideBar() {
                 }
             }
 
-            setRoutes(routes);
+            setRoutes(new Map(routes));  // new reference, or React bails out of the update
             forceReload(Math.random());
         }
 
         RouteURL.addListener(() => change());
 
         change();
+
+        return () => searchBox?.removeEventListener("keydown", onEnter);
     }, [])
 
     return (
         <>
-            <div id="nav-bar">
+            <div id="navbar-toggle">
                 <button className="openbtn" onClick={() => setSidebarOpen(!sidebarOpen)}>
                     <Icon as={GiHamburgerMenu} boxSize={6} />
                 </button>
