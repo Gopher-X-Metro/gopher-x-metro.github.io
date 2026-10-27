@@ -127,30 +127,40 @@ function isNight(now = new Date()) : boolean {
  * @param onAdded runs once the labels are on the map
  */
 function addBuildingNames(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>, onAdded: () => void) {
-    fetch(process.env.PUBLIC_URL + "/data/campus-buildings.json")
-        .then(response => response.json())
-        .then(buildings => {
-            const addLabels = () => {
-                if (gl.getSource("campus-buildings")) return;
-                gl.addSource("campus-buildings", { type: "geojson", data: buildings });
-                gl.addLayer({
-                    id: "campus-building-labels",
-                    type: "symbol",
-                    source: "campus-buildings",
-                    minzoom: 16.5,
-                    layout: {
-                        "text-field": ["get", "name"],
-                        "text-font": ["Noto Sans Regular"],
-                        "text-size": 11,
-                        "text-max-width": 7,
-                    },
-                    paint: { "text-color": "#5f5f5f", "text-halo-color": "#ffffff", "text-halo-width": 1.2 },
-                });
-                onAdded();
-            };
-            if (gl.isStyleLoaded()) addLabels(); else gl.once("style.load", addLabels);
-        })
-        .catch(() => {});
+    // The layer only paints at zoom >= 16.5 and this is the largest asset on the site, so most sessions
+    // (which never zoom that far) should never download or parse it.
+    let started = false;
+    const load = () => {
+        if (started) return;
+        started = true;
+        gl.off("zoomend", maybeLoad);
+        fetch(process.env.PUBLIC_URL + "/data/campus-buildings.json")
+            .then(response => response.json())
+            .then(buildings => {
+                const addLabels = () => {
+                    if (gl.getSource("campus-buildings")) return;
+                    gl.addSource("campus-buildings", { type: "geojson", data: buildings });
+                    gl.addLayer({
+                        id: "campus-building-labels",
+                        type: "symbol",
+                        source: "campus-buildings",
+                        minzoom: 16.5,
+                        layout: {
+                            "text-field": ["get", "name"],
+                            "text-font": ["Noto Sans Regular"],
+                            "text-size": 11,
+                            "text-max-width": 7,
+                        },
+                        paint: { "text-color": "#5f5f5f", "text-halo-color": "#ffffff", "text-halo-width": 1.2 },
+                    });
+                    onAdded();
+                };
+                if (gl.isStyleLoaded()) addLabels(); else gl.once("style.load", addLabels);
+            })
+            .catch(() => {});
+    };
+    const maybeLoad = () => { if (gl.getZoom() >= 16.5) load(); };
+    if (gl.getZoom() >= 16.5) load(); else gl.on("zoomend", maybeLoad);
 }
 
 // maplibre-gl is ~1 MB, so it loads after the map shell paints instead of blocking first paint
@@ -193,7 +203,8 @@ async function addBasemap(leafletMap: L.Map) {
     addBuildingNames(gl, () => { night = undefined; applyTheme(); });
     // style.load fires before tiles paint, so night never flashes the day colors first (load waits for a full render)
     if (gl.isStyleLoaded()) applyTheme(); else gl.once("style.load", () => { night = undefined; applyTheme(); });
-    setInterval(applyTheme, 60000);
+    const themeTimer = setInterval(applyTheme, 60000);
+    return () => clearInterval(themeTimer);
 }
 
 export default function MapPage({ hidden, setPage, isMobile }) {
@@ -201,6 +212,7 @@ export default function MapPage({ hidden, setPage, isMobile }) {
     const [map, setMap] = useState<L.Map | null>(null);
     const mapDiv = useRef<HTMLDivElement>(null);
     const page = useRef<HTMLDivElement>(null);
+    const basemapCleanup = useRef<(() => void) | null>(null);
 
     useEffect(() => {
         // The header's height scales with the window, so map controls are placed below its measured bottom
@@ -224,11 +236,14 @@ export default function MapPage({ hidden, setPage, isMobile }) {
                 minZoom: 10,
             }).setView(UMNLocation, defaultZoom);
             L.control.zoom({ position: "bottomright" }).addTo(leafletMap);
-            addBasemap(leafletMap);
+            addBasemap(leafletMap).then((cleanup) => { basemapCleanup.current = cleanup; });
             setMap(leafletMap);
             currentMap = leafletMap;
         }
     }, [map])
+
+    // The map lives for the whole session, so this only runs on unmount / hot reload
+    useEffect(() => () => { basemapCleanup.current?.(); }, [])
 
     useEffect(() => {
         // The map's size is unknown while the page is hidden
@@ -237,9 +252,15 @@ export default function MapPage({ hidden, setPage, isMobile }) {
 
     useEffect(() => {
         // Initalizes Map Component
+        let stop: (() => void) | undefined;
+        let cancelled = false;
         if (map) {
-            initalize(map).then(() => setMapLoaded(true));
+            initalize(map).then((cleanup) => {
+                if (cancelled) cleanup();
+                else { stop = cleanup; setMapLoaded(true); }
+            });
         }
+        return () => { cancelled = true; stop?.(); };
     }, [map])
 
     return (
@@ -282,13 +303,15 @@ async function initalize( map: L.Map ) {
     Marker.init(map, showLinkedRoutes);
     showLinkedRoutes();
 
-    // Updates vehicle postions every 0.5 seconds (the rider's marker follows their location on its own)
-    setInterval(() => {
+    // Vehicle positions come from a feed that itself refreshes every 2 s, so polling it faster only burns CPU
+    const vehicles = setInterval(() => {
         Routes.refreshVehicles();
-    }, 500); // ms of wait
+    }, 2000); // ms of wait
 
     // Updates stops every 30 seconds
-    setInterval(() => {
+    const stops = setInterval(() => {
         Routes.refreshStops();
     }, 30000); // ms of wait
+
+    return () => { clearInterval(vehicles); clearInterval(stops); };
 }
