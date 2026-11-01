@@ -10,10 +10,10 @@
     "@types/leaflet": "^1.9.22",
     "gtfs-realtime-bindings": "^2.2.0",
     "leaflet": "^1.9.4",
-    "maplibre-gl": "^5.24.0",
+    "maplibre-gl": "^6.16.0",
     "proj4": "^2.22.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "react-icons": "^5.7.0"
   },
   "scripts": {
@@ -26,14 +26,14 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.1",
-    "knip": "^6.38.0",
-    "postcss": "^8.5.28",
+    "@vitejs/plugin-react": "^6.1.2",
+    "knip": "^6.43.0",
+    "postcss": "^8.5.32",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4"
+    "vite": "^8.3.5"
   }
 }
