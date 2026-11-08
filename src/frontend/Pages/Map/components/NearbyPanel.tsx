@@ -38,7 +38,9 @@ export default function NearbyPanel({ map, isMobile }: { map: L.Map | null, isMo
     const [nearby, setNearby] = useState<StopView[]>([]);
     // Opens on its own when there are favorites, except on phones where it would cover the map
     const [open, setOpen] = useState(() => loadFavorites().length > 0 && !window.matchMedia("(max-width: 1024px)").matches);
-    const [status, setStatus] = useState("");
+    // Nearby search: idle -> searching -> found | fallback | none | failed (see NEARBY_MESSAGES)
+    const [status, setStatus] = useState<NearbyStatus>("idle");
+    const latestSearch = useRef(0);
     const [colors, setColors] = useState<Record<string, string>>({});
     // Routes shown on the map; departure chips toggle them, same as the sidebar route buttons
     const [shownRoutes, setShownRoutes] = useState<Set<string>>(() => RouteURL.getRoutes());
@@ -91,18 +93,27 @@ export default function NearbyPanel({ map, isMobile }: { map: L.Map | null, isMo
 
     /** Finds stops near the user, or near the middle of the map if location is unavailable */
     const findNearby = useCallback(() => {
-        setStatus("Finding stops near you…");
+        // Only the newest search may update the list (↻ can be pressed again mid-search)
+        const searchId = ++latestSearch.current;
+        const isLatest = () => searchId === latestSearch.current;
+        setStatus("searching");
         const search = async (lat: number, lng: number, usedLocation: boolean) => {
+            if (!isLatest()) return;
             setPosition({ lat, lng });
-            const stops = await Live.nearestStops(lat, lng, 5, 800);
-            setNearby(await withDepartures(stops));
-            setStatus(stops.length === 0
-                ? "No stops within a 10 minute walk."
-                : usedLocation ? "" : "Showing stops near the middle of the map (location unavailable).");
+            try {
+                const stops = await Live.nearestStops(lat, lng, 5, 800);
+                const loaded = await withDepartures(stops);
+                if (!isLatest()) return;
+                setNearby(loaded);
+                setStatus(stops.length === 0 ? "none" : usedLocation ? "found" : "fallback");
+            } catch {
+                if (isLatest()) setStatus("failed");
+            }
         };
         const fallback = () => {
             const center = map?.getCenter();
             if (center) search(center.lat, center.lng, false);
+            else if (isLatest()) setStatus("failed");
         };
         if (navigator.geolocation)
             navigator.geolocation.getCurrentPosition(
@@ -257,7 +268,7 @@ export default function NearbyPanel({ map, isMobile }: { map: L.Map | null, isMo
                         <h4>Nearby</h4>
                         <button className="refresh" onClick={findNearby} title="Search again from your location">↻</button>
                     </div>
-                    {status && <p className="muted">{status}</p>}
+                    {NEARBY_MESSAGES[status] && <p className="muted">{NEARBY_MESSAGES[status]}</p>}
                     {notice && <p className="notice" onClick={() => setNotice("")}>{notice}</p>}
                     <ul>{nearby.filter(stop => !isFavorite(stop.id)).map(renderStop)}</ul>
                     <p className="muted legend">📡 = live time from a tracked vehicle. 🏃 = leaves before you could walk there (dimmed if no live bus is tracking it). Tap 🔕 to get an alert 5 min before a bus leaves. Scheduled times may note a bus that usually runs late or leaves early, <a href="https://kennedyjohnson.github.io/metro-transit-delays/" target="_blank" rel="noreferrer">from its past runs</a>.</p>
@@ -266,6 +277,16 @@ export default function NearbyPanel({ map, isMobile }: { map: L.Map | null, isMo
         </div>
     )
 }
+
+type NearbyStatus = "idle" | "searching" | "found" | "fallback" | "none" | "failed";
+const NEARBY_MESSAGES: Record<NearbyStatus, string> = {
+    idle: "",
+    searching: "Finding stops near you…",
+    found: "",
+    fallback: "Showing stops near the middle of the map (location unavailable).",
+    none: "No stops within a 10 minute walk.",
+    failed: "Couldn't load nearby stops. Tap ↻ to try again.",
+};
 
 /** Minutes until a departure, matching its shown "7 Min" text so the leave-by hint adds up */
 function minutesAway(d: Live.Departure) : number {
