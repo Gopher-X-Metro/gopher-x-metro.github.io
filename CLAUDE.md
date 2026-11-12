@@ -7,6 +7,9 @@ Live map of UMN campus buses (Peak Transit) + Metro Transit buses/light rail. Re
 - `src/frontend/Pages/{Map,Schedule,Alerts,About}`, `src/frontend/NavBar`.
 - `scripts/build-gtfs.mjs <dir>` - converts Metro Transit GTFS txt → `public/gtfs/**.json` (gitignored `/gtfs`; generated in CI).
 
+## Offline
+`public/sw.js` (registered in production builds only): app shell cache-first, `gtfs/`+`data/` network-first with a 3 s fallback to cache, live APIs and tiles never cached. Bump `VERSION` there to drop old caches.
+
 ## Config
 - `REACT_APP_PEAK_KEY` - Peak Transit rider API key. Local: `.env.local` (gitignored). CI: repo secret of same name. CRA inlines it into the bundle, so it is not truly secret.
 - `REACT_APP_LINE_*` - map line widths.

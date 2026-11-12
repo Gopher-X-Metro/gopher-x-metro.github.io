@@ -83,9 +83,10 @@ namespace Live {
      * @param stopId ID of the stop
      */
     export async function getDepartures(stopId: string) : Promise<StopDepartures> {
-        const data = await Realtime.getStop(stopId);
+        const raw = await Realtime.getStop(stopId);
         // No answer (offline, or Metro Transit down) is an error, not a stop with no buses
-        if (!data) throw new Error("Departures unavailable for stop " + stopId);
+        if (!raw) throw new Error("Departures unavailable for stop " + stopId);
+        const data = { ...raw, departures: await withCampusTimes(raw) };
         return {
             departures: (data.departures ?? []).map((d: any) => ({
                 tripId: String(d.trip_id),
@@ -202,6 +203,64 @@ namespace Live {
     }
 
     /**
+     * Live arrival times of a campus route at the campus stop nearest a place, from Peak Transit: the bus-tracked
+     * times the official campus bus map shows. Metro Transit only publishes the campus buses' timetable.
+     * @param routeId   route number, like "121"
+     * @returns epoch seconds, soonest first; empty when Peak has no stop there or no bus on the way
+     */
+    export async function getCampusArrivals(routeId: string, lat: number, lng: number) : Promise<number[]> {
+        // The night/weekend version of a route is its own Peak route with its own stops
+        const peakIds = [Peak.UNIVERSITY_ROUTES[routeId], Peak.NIGHT_ROUTES[routeId]].filter(Boolean) as number[];
+        if (!peakIds.length) return [];
+        const [etas, routeStops, stops] = await Promise.all([getCachedJSON(PEAK_URL + "eta", 15000), getCachedJSON(PEAK_URL + "routestop2", HOUR), getPeakStops()]);
+        const now = Date.now() / 1000;
+        const times: number[] = [];
+        for (const peakId of peakIds) {
+            let best: { id: number, meters: number } | undefined;
+            for (const rs of routeStops?.routeStops ?? []) {
+                const stop = stops.get(rs.stopID);
+                if (Number(rs.routeID) !== peakId || rs.disabled || !stop?.open) continue;
+                const meters = distance(lat, lng, stop.lat, stop.lng);
+                if (meters <= CAMPUS_STOP_METERS && (!best || meters < best.meters)) best = { id: rs.stopID, meters };
+            }
+            if (!best) continue;
+            const eta = (etas?.stop ?? []).find((e: any) => Number(e.stopID) === best!.id && Number(e.routeID) === peakId);
+            // Past the window these are timetable guesses for a version of the route that isn't out yet
+            for (const time of [eta?.ETA1, eta?.ETA2])
+                if (time && time > now - 30 && time < now + CAMPUS_ETA_WINDOW) times.push(Number(time));
+        }
+        return times.sort((a, b) => a - b);
+    }
+
+    /**
+     * A stop's departures with the campus routes' timetable times swapped for Peak Transit's live ones
+     * @param data a stop's NexTrip answer
+     * @returns the departures, soonest first
+     */
+    export async function withCampusTimes(data: any) : Promise<any[]> {
+        const departures: any[] = data?.departures ?? [];
+        const place = data?.stops?.[0];
+        const campus = [...new Set(departures.map(d => d.route_id as string))].filter(id => Peak.UNIVERSITY_ROUTES[id]);
+        if (!place || !campus.length) return departures;
+        const now = Date.now() / 1000;
+        let result = departures;
+        for (const routeId of campus) {
+            const arrivals = await getCampusArrivals(routeId, place.latitude, place.longitude);
+            if (!arrivals.length) continue;
+            const mine = result.filter(d => d.route_id === routeId);
+            // The next buses take the live times; timetable trips after them stay as they are
+            const live = arrivals.slice(0, mine.length).map((time, i) => {
+                const minutes = Math.round((time - now) / 60);
+                return { ...mine[i], departure_time: time, actual: true, departure_text: minutes <= 0 ? "Due" : minutes + " Min" };
+            });
+            const last = live[live.length - 1].departure_time;
+            const later = mine.slice(live.length).filter(d => d.departure_time > last + 180);
+            result = [...result.filter(d => d.route_id !== routeId), ...live, ...later];
+        }
+        return result === departures ? departures : [...result].sort((a, b) => a.departure_time - b.departure_time);
+    }
+
+    /**
      * Gets the stops served by a campus route
      * @param routeId Peak Transit route ID
      */
@@ -294,6 +353,11 @@ namespace Live {
     // Campus notices have no end date, so only recent ones are shown
     const NOTICE_DAYS = 3;
     const HOUR = 60 * 60 * 1000;
+
+    /** How close a campus (Peak) stop must be to a Metro Transit stop to be the same stop */
+    const CAMPUS_STOP_METERS = 120;
+    /** Seconds ahead that Peak's arrival times are from a tracked bus */
+    const CAMPUS_ETA_WINDOW = 90 * 60;
 
     const PEAK_LINE_METERS = 60;
     type PeakLine = {

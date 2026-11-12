@@ -186,27 +186,27 @@ body {
 
 /* Define colors for each route */
 .sidebar-content button.route-121::before {
-    background-color: #FF0000; /* Red */
+    background-color: #ee2135; /* Red */
 }
 
 .sidebar-content button.route-122::before {
-    background-color: #800080; /* Purple */
+    background-color: #2e3094; /* Navy */
 }
 
 .sidebar-content button.route-123::before {
-    background-color: #1ab7b7; /* Cyan */
+    background-color: #02ade1; /* Light blue */
 }
 
 .sidebar-content button.route-124::before {
-    background-color: #90EE90; /* Light Green */
+    background-color: #20ac76; /* Green */
 }
 
 .sidebar-content button.route-125::before {
-  background-color: #c727e2; /* Light Green */
+  background-color: #984ea5; /* Purple */
 }
 
 .sidebar-content button.route-120::before {
-    background-color: #FFC0CB; /* Pink */
+    background-color: #f8ad5d; /* Orange */
 }
 
 .sidebar-content button.route-2::before {
@@ -223,7 +223,7 @@ body {
 }
 
 .sidebar-content button.route-126::before {
-    background-color: #7a4a14; /* Brown, matching the campus rider site */
+    background-color: #684002; /* Brown, matching the campus rider site */
 }
 
 .sidebar-content button.route-902::before {

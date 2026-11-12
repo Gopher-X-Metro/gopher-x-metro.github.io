@@ -74,6 +74,9 @@ namespace Routes {
             for (const stop of stops.values()) (await stop)?.setZoomSize(_map.getZoom());
         });
         map = _map;
+        // Stops that come into view get their departures then, a moment after the map settles
+        let settle: ReturnType<typeof setTimeout> | undefined;
+        _map.on("moveend", () => { clearTimeout(settle); settle = setTimeout(refreshVisibleDepartures, 400); });
         
         RouteURL.addListener(() => refresh());
         // Bus popups link their next stop here (an event avoids a Vehicle -> Routes import cycle)
@@ -147,17 +150,21 @@ namespace Routes {
                 return;
             }
 
+            const metroStopIds = new Set<string>();
             for (const schedule of inactive ? details.schedules.slice(0, 1) : today)
                 for (const timetable of schedule.timetables)
-                    for (const info of (await Schedule.getStopList(routeId, timetable.schedule_number)) ?? [])
-                        loadStop(info.stop_id, timetable.direction).then(stop => {
+                    for (const info of (await Schedule.getStopList(routeId, timetable.schedule_number)) ?? []) {
+                        // Metro Transit gives stop IDs as numbers here; everything else knows them as text
+                        const stopId = String(info.stop_id);
+                        metroStopIds.add(stopId);
+                        loadStop(stopId, timetable.direction).then(stop => {
                             if (!stop) return;
                             stop.routeIds.add(routeId);
                             if (inactive) stop.inactiveRouteIds.add(routeId);
 
                             const route = routes.get(routeId);
-                            if (route && !route.getStops().has(info.stop_id)) {
-                                route.addStopObject(info.stop_id, stop);
+                            if (route && !route.getStops().has(stopId)) {
+                                route.addStopObject(stopId, stop);
                                 // Hovering a stop bolds its route's line
                                 stop.getMarker().on("mouseover", () => setBolded(routeId, true));
                                 stop.getMarker().on("mouseout", () => setBolded(routeId, false));
@@ -165,6 +172,14 @@ namespace Routes {
 
                             refreshDepartures(stop);
                         });
+                    }
+
+            // The official campus bus map has a few stops Metro Transit's list leaves out; those are added from Peak
+            if (Peak.UNIVERSITY_ROUTES[routeId] && metroStopIds.size > 0) {
+                const index = await stopIndex();
+                const placed = [...metroStopIds].map(id => index.get(id)).filter(Boolean).map(stop => L.latLng(stop![2], stop![3]));
+                loadPeakStops(routeId, inactive, placed);
+            }
         })
     }
     /**
@@ -176,8 +191,13 @@ namespace Routes {
     export async function loadStop(stopId: string, direction: string) : Promise<Stop | undefined> {
         if (!stops.has(stopId)) {
             stops.set(stopId, (async () => {
-                const info = await Realtime.getStop(stopId);
-                const properties = info?.stops?.[0];
+                // The generated stop list already has every stop's name and place, so placing a stop costs no request;
+                // Metro Transit is only asked when the list doesn't have it
+                const local = (await stopIndex()).get(stopId);
+                const properties = local
+                    ? { stop_id: stopId, description: local[1], latitude: local[2], longitude: local[3] }
+                    : (await Realtime.getStop(stopId))?.stops?.[0];
+                if (properties) properties.stop_id = String(properties.stop_id);
                 let stop: Stop | undefined;
 
                 if (properties) {
@@ -185,7 +205,9 @@ namespace Routes {
                         stop = new Stop(properties.stop_id, "#4169e1", properties.description, direction, L.latLng(properties.latitude, properties.longitude), map);
                         stops.set(properties.stop_id, Promise.resolve(stop));
 
+                        const placed = stop;
                         stop.getMarker().on("click", async () => {
+                            refreshDepartures(placed);
                             for (let s of stops) 
                                 if ((await s[1])?.getId() !== properties.stop_id)
                                     (await s[1])?.infoWindow?.setVisible(false);
@@ -215,6 +237,7 @@ namespace Routes {
         stop.infoWindow.setPosition(location);
         stop.infoWindow.setVisible(true);
         stop.updateWindow();
+        refreshDepartures(stop);
     }
 
     /**
@@ -246,13 +269,17 @@ namespace Routes {
      * Shows a campus route's stops and arrival times from Peak Transit
      * @param routeId ID of the route
      */
-    async function loadPeakStops(routeId: string, inactive = false) {
-        const peakRouteId = Peak.UNIVERSITY_ROUTES[routeId];
+    async function loadPeakStops(routeId: string, inactive = false, alreadyPlaced?: L.LatLng[]) {
         const route = routes.get(routeId);
         if (!route) return;
+        // Filling in around Metro Transit's stops also covers the night/weekend version of the route, as that list does
+        const peakRouteIds = [Peak.UNIVERSITY_ROUTES[routeId], alreadyPlaced && Peak.NIGHT_ROUTES[routeId]].filter(Boolean) as number[];
+        const cleared = new Set<string>();
 
+        for (const peakRouteId of peakRouteIds)
         for (const info of await Live.getPeakRouteStops(peakRouteId)) {
             const stopId = "peak-" + info.id;
+            if (alreadyPlaced?.some(place => place.distanceTo([info.lat, info.lng]) <= NEAREST_STOP_METERS)) continue;
             if (!stops.has(stopId))
                 stops.set(stopId, Promise.resolve(new Stop(stopId, "#4169e1", info.name, ROUTE_NAMES[routeId] ?? routeId, L.latLng(info.lat, info.lng), map)));
             const stop = await stops.get(stopId);
@@ -266,7 +293,8 @@ namespace Routes {
                 stop.getMarker().on("mouseout", () => setBolded(routeId, false));
             }
 
-            stop.clearDepartures();
+            // A stop on both versions of the route keeps the times of both
+            if (!cleared.has(stopId)) { stop.clearDepartures(); cleared.add(stopId); }
             for (const time of await Live.getPeakArrivals(info.id, peakRouteId)) {
                 const minutes = Math.round((time - Date.now() / 1000) / 60);
                 // Like Metro's countdowns, anything over an hour out reads as a clock time
@@ -334,11 +362,38 @@ namespace Routes {
         }
     }
 
+    let stopLookup: Promise<Map<string, [string, string, number, number]>> | undefined;
+    function stopIndex() {
+        if (!stopLookup) stopLookup = Live.getStops().then(all => new Map(all.map(stop => [stop[0], stop])));
+        return stopLookup;
+    }
+
+    /** Stops are hidden below this zoom (see Stop.ts), so their departures aren't worth asking for */
+    const STOPS_MIN_ZOOM = 14;
+
+    /** If a stop is where the rider can see it (or its departures window is open) */
+    function inView(stop: Stop) : boolean {
+        if (stop.infoWindow?.isVisible?.()) return true;
+        return map.getZoom() >= STOPS_MIN_ZOOM && map.getBounds().pad(0.2).contains((stop.getMarker() as L.CircleMarker).getLatLng());
+    }
+
+    /** Refreshes the departures of the stops in view, for stops scrolled or zoomed into */
+    async function refreshVisibleDepartures() : Promise<void> {
+        for (const pending of [...stops.values()]) {
+            const stop = await pending;
+            if (stop?.isVisible()) refreshDepartures(stop);
+        }
+    }
+
     async function refreshDepartures(stop: Stop) : Promise<void> {
+        // Each stop is its own request, so only the ones on screen are asked about
+        // Campus-only stops get their times from Peak Transit with their route (see loadPeakStops)
+        if (!inView(stop) || stop.getId().startsWith("peak-")) return;
         const response = await Realtime.getStop(stop.getId());
         if (!response?.departures) return;
+        const departures = await Live.withCampusTimes(response);
         stop.clearDepartures();
-        for (const departure of response.departures)
+        for (const departure of departures)
             stop.addDeparture(departure.route_id, departure.trip_id, departure.departure_text, departure.direction_text, departure.description, departure.departure_time);
         stop.updateWindow();
     }
