@@ -95,7 +95,7 @@ namespace Resources {
     /* Override Bus Images */
     const ROUTE_IMAGES: Record<string, [string, string]> = {
         "120": images("120"), "121": images("121"), "122": images("122"), "123": images("123"),
-        "124": images("124"), "125": images("125"), "2": images("2"), "3": images("3"),
+        "124": images("124"), "125": images("125"), "126": images("126"), "2": images("2"), "3": images("3"),
         "6": images("6"), "925": images("6"), "FOOTBALL": images("FOOTBALL"),
         "902": [VEHICLES + "902_greenline.png", VEHICLES + "902_greenline_arrow.png"],
         "901": [VEHICLES + "901_blueline.png", VEHICLES + "901_blueline_arrow.png"],
@@ -104,13 +104,14 @@ namespace Resources {
 
     /* Override Route Colors */
     const ROUTE_COLORS = {
-        "120": "FFC0CB", 
-        "121": "FF0000", 
-        "122": "800080", 
-        "123": "1ab7b7", 
-        "124": "90EE90",
-        "125": "c727e2",
-        "126": "7a4a14",
+        // Campus routes use the colors of the official campus bus map (Peak Transit)
+        "120": "f8ad5d",
+        "121": "ee2135",
+        "122": "2e3094",
+        "123": "02ade1",
+        "124": "20ac76",
+        "125": "984ea5",
+        "126": "684002",
         "FOOTBALL": "964B00",
         "2": "bab832",
         "3": "d18528",

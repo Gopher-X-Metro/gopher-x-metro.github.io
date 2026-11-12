@@ -78,7 +78,7 @@ function About({ hidden, setPage }) {
 
                 <h2 className="alerts-heading">Credits</h2>
                 <p className="about-text">
-                    Built in 2024 by Adam, Ken, Riley, Will, Babacar, Alex, Mike, Andy and Avi, and revived in 2026.
+                    Built in 2024 by Adam, Ken (<a href="https://kennedyjohnson.github.io/" target="_blank" rel="noreferrer">portfolio</a>), Riley, Will, Babacar, Alex, Mike, Andy and Avi, and revived in 2026.
                     Live data from Metro Transit and Peak Transit. Map data © OpenStreetMap contributors.
                 </p>
             </div>

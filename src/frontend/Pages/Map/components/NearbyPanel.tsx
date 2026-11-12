@@ -18,6 +18,11 @@ interface StopView {
 }
 
 const FAVORITES_KEY = "gxm-favorite-stops";
+const PANEL_CLOSED_KEY = "gxm-nearby-closed";
+
+function panelClosed() : boolean {
+    try { return localStorage.getItem(PANEL_CLOSED_KEY) === "1"; } catch { return false; }
+}
 
 /** A departure the rider asked to be told about */
 
@@ -36,8 +41,13 @@ function saveFavorites(favorites: StopView[]) : void {
 export default function NearbyPanel({ map, isMobile }: { map: L.Map | null, isMobile: boolean }) {
     const [favorites, setFavorites] = useState<StopView[]>(loadFavorites);
     const [nearby, setNearby] = useState<StopView[]>([]);
-    // Opens on its own when there are favorites, except on phones where it would cover the map
-    const [open, setOpen] = useState(() => loadFavorites().length > 0 && !window.matchMedia("(max-width: 1024px)").matches);
+    // Opens on its own so departures are the first thing a rider sees, except on phones where it would cover the map
+    // (closing it is remembered)
+    const [open, setOpenState] = useState(() => !window.matchMedia("(max-width: 1024px)").matches && !panelClosed());
+    const setOpen = (next: boolean) => {
+        try { localStorage.setItem(PANEL_CLOSED_KEY, next ? "" : "1"); } catch {}
+        setOpenState(next);
+    };
     // Nearby search: idle -> searching -> found | fallback | none | failed (see NEARBY_MESSAGES)
     const [status, setStatus] = useState<NearbyStatus>("idle");
     const latestSearch = useRef(0);

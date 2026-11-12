@@ -163,15 +163,47 @@ function addBuildingNames(gl: ReturnType<L.MaplibreGL["getMaplibreMap"]>, onAdde
     if (gl.getZoom() >= 16.5) load(); else gl.on("zoomend", maybeLoad);
 }
 
+/** If this browser can draw the vector basemap */
+function hasWebGL() : boolean {
+    try {
+        const canvas = document.createElement("canvas");
+        return !!(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
+    } catch {
+        return false;
+    }
+}
+
+/** Image-tile basemap for browsers without WebGL */
+function addRasterBasemap(leafletMap: L.Map) : () => void {
+    leafletMap.getContainer().style.background = "";
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(leafletMap);
+    return () => {};
+}
+
 // maplibre-gl is ~1 MB, so it loads after the map shell paints instead of blocking first paint
 async function addBasemap(leafletMap: L.Map) {
     // The empty map shows while maplibre downloads, so at night it starts dark rather than flashing light
     if (isNight()) leafletMap.getContainer().style.background = NIGHT.ground;
+    // Without WebGL (some older phones and locked-down lab computers) the vector basemap can't draw,
+    // so those get plain image tiles and skip the maplibre download
+    if (!hasWebGL()) return addRasterBasemap(leafletMap);
     await Promise.all([import("maplibre-gl/dist/maplibre-gl.css"), import("@maplibre/maplibre-gl-leaflet")]);
     // OpenFreeMap's Liberty (free, no key; keeps place icons), toned down so routes and stops stand out
     const basemap = L.maplibreGL({
         style: "https://tiles.openfreemap.org/styles/liberty",
-    }).addTo(leafletMap);
+    });
+    try {
+        basemap.addTo(leafletMap);
+    } catch {
+        // A half-added layer keeps throwing from the map's move events, which stops routes and stops from drawing
+        try { leafletMap.removeLayer(basemap); } catch {}
+        try { (leafletMap as any).off((basemap as any).getEvents(), basemap); } catch {}
+        delete (leafletMap as any)._layers[L.stamp(basemap)];
+        return addRasterBasemap(leafletMap);
+    }
     const gl = basemap.getMaplibreMap();
     // Restyle once the style's layers exist (it may load before or after this runs)
     const restyle = () => {
@@ -304,14 +336,17 @@ async function initalize( map: L.Map ) {
     showLinkedRoutes();
 
     // Vehicle positions come from a feed that itself refreshes every 2 s, so polling it faster only burns CPU
+    // A tab in the background polls nothing, and catches up the moment it's looked at again
     const vehicles = setInterval(() => {
-        Routes.refreshVehicles();
+        if (!document.hidden) Routes.refreshVehicles();
     }, 2000); // ms of wait
+    const onVisible = () => { if (!document.hidden) { Routes.refreshVehicles(); Routes.refreshStops(); } };
+    document.addEventListener("visibilitychange", onVisible);
 
     // Updates stops every 30 seconds
     const stops = setInterval(() => {
-        Routes.refreshStops();
+        if (!document.hidden) Routes.refreshStops();
     }, 30000); // ms of wait
 
-    return () => { clearInterval(vehicles); clearInterval(stops); };
+    return () => { clearInterval(vehicles); clearInterval(stops); document.removeEventListener("visibilitychange", onVisible); };
 }

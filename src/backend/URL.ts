@@ -52,9 +52,24 @@ namespace RouteURL {
     };
     const listeners = new Set<() => void>();
 
+    const SAVED_KEY = "gxm-routes";
+    // A first visit opens on the routes most students ride, rather than an empty map
+    const FIRST_VISIT_ROUTES = "121,122,123,902";
+
+    /** Opens on the routes shown last time (a link with its own ?route= wins) */
+    function restore() : void {
+        if (new URLSearchParams(window.location.search).has("route")) return;
+        let saved: string | null = null;
+        try { saved = localStorage.getItem(SAVED_KEY); } catch {}
+        const routes = saved ?? FIRST_VISIT_ROUTES;
+        if (routes) window.history.replaceState(window.history.state, "", "./?route=" + routes);
+    }
+    restore();
+
     /** Writes the routes to the URL and runs the listeners */
     function setRoutes(routes: Set<string>) : void {
         window.history.replaceState(window.history.state, "", routes.size === 0 ? "./" : "./?route=" + [...routes].join(","));
+        try { localStorage.setItem(SAVED_KEY, [...routes].join(",")); } catch {}
         listeners.forEach(f => f());
     }
 }
