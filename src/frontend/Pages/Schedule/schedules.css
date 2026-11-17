@@ -28,3 +28,5 @@
 .faq > div { margin: 10px 0 14px; }
 .faq dt { font-weight: bold; font-size: 15px; }
 .faq dd { font-size: 14px; color: #444; line-height: 1.5; margin: 2px 0 0; }
+
+.campus-stops { margin: 4px 0 12px 20px; list-style: decimal; line-height: 1.7; }

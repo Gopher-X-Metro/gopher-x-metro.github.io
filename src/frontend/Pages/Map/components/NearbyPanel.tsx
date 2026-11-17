@@ -5,6 +5,7 @@ import Resources from "src/backend/Resources";
 import RouteURL from "src/backend/URL";
 import Alerts from "src/backend/Alerts";
 import Delays from "src/backend/Delays";
+import Peak from "src/backend/Peak";
 
 interface StopView {
     id: string;
@@ -15,6 +16,14 @@ interface StopView {
     departures?: Live.Departure[];
     alerts?: string[];
     error?: boolean;
+}
+
+const DIRECTION_NAMES: Record<string, string> = { NB: "Northbound", SB: "Southbound", EB: "Eastbound", WB: "Westbound" };
+
+/** Which way buses at a stop head, from regular routes only: campus loops carry a placeholder direction in Metro Transit's data */
+function stopDirection(stop: StopView) : string | undefined {
+    const d = stop.departures?.find(d => !Peak.UNIVERSITY_ROUTES[d.routeId]);
+    return d ? DIRECTION_NAMES[d.direction] : undefined;
 }
 
 const FAVORITES_KEY = "gxm-favorite-stops";
@@ -210,14 +219,18 @@ export default function NearbyPanel({ map, isMobile }: { map: L.Map | null, isMo
         const minutes = walk(stop);
         // The first departure the rider can still walk to, and how long until they need to set off
         const catchable = minutes === undefined ? undefined
-            : stop.departures?.find(d => d.time * 1000 - Date.now() >= minutes * 60000);
+            : stop.departures?.find(d => !d.detour && d.time * 1000 - Date.now() >= minutes * 60000);
         const leave = catchable && minutes !== undefined
             ? { in: minutesAway(catchable) - minutes, route: catchable.routeName }
             : undefined;
         return (
             <li key={stop.id} className={"stop-row" + (focusedId === stop.id ? " focused" : "")}>
                 <div className="stop-head">
-                    <button className="stop-name" onClick={() => focusStop(stop)} title="Show on map">{stop.name}</button>
+                    <button className="stop-name" onClick={() => focusStop(stop)} title="Show on map">
+                        {stop.name}
+                        {/* Both sides of a street share a name, so say which way this one goes */}
+                        {stopDirection(stop) && <span className="stop-direction"> · {stopDirection(stop)}</span>}
+                    </button>
                     <button className={"star" + (isFavorite(stop.id) ? " on" : "")}
                             onClick={() => toggleFavorite(stop)}
                             aria-label={isFavorite(stop.id) ? "Remove from favorites" : "Add to favorites"}
@@ -243,6 +256,7 @@ export default function NearbyPanel({ map, isMobile }: { map: L.Map | null, isMo
                                         title={(shownRoutes.has(d.routeId) ? "Hide" : "Show") + ` route ${d.routeName} on the map`}>{d.routeName}</button>
                                 <span className="dest" role="button" tabIndex={0} onClick={() => toggleRoute(d.routeId)} onKeyDown={e => e.key === "Enter" && toggleRoute(d.routeId)}>{d.description}</span>
                                 <span className="time">{d.actual && "📡 "}{d.text}</span>
+                                {d.detour && <span className="delay-est detour" title={d.detour}>detour: may skip stop</span>}
                                 {!d.actual && estimates[stop.id + "|" + d.tripId] && (
                                     <span className={"delay-est " + estimates[stop.id + "|" + d.tripId].kind}
                                           title={estimates[stop.id + "|" + d.tripId].title}>
@@ -347,6 +361,13 @@ function stopPopup(stop: StopView, colors: Record<string, string>, toggleRoute: 
             times.appendChild(time);
         });
         row.appendChild(times);
+        if (departures[0].detour) {
+            const flag = document.createElement("span");
+            flag.className = "stop-popup-detour";
+            flag.textContent = "detour: may skip stop";
+            flag.title = departures[0].detour;
+            row.appendChild(flag);
+        }
         row.appendChild(Alerts.routeBell(stop.id, stop.name, departures[0].routeName, departures));
         list.appendChild(row);
     }

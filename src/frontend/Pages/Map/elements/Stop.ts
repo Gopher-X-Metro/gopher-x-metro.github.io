@@ -119,6 +119,7 @@ class Stop extends InfoWindowElement {
                 // Work from a snapshot: departures can refresh while colors load, which would repeat rows
                 const snapshot = [...this.departures].map(([routeId, departures]) => [routeId, [...departures]] as [string, departure[]]);
                 const colors = await Promise.all(snapshot.map(([routeId]) => Resources.getColor(routeId)));
+                const skips = await Live.getCampusSkips().catch(() => []);
                 for (const [i, [routeId, departures]] of snapshot.entries()) {
                     const row = document.createElement("li");
 
@@ -143,6 +144,14 @@ class Stop extends InfoWindowElement {
                         times.appendChild(time);
                     });
                     row.appendChild(times);
+                    const detour = Live.skippedBy(skips, routeId, this.name);
+                    if (detour) {
+                        const flag = document.createElement("span");
+                        flag.className = "stop-popup-detour";
+                        flag.textContent = "detour: may skip stop";
+                        flag.title = detour;
+                        row.appendChild(flag);
+                    }
                     row.appendChild(Alerts.routeBell(this.getId(), this.name, chipLabel(routeId),
                         departures.map(d => ({ tripId: d.tripId, time: d.departure_time }))));
                     listElement.appendChild(row);

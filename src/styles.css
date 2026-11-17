@@ -82,7 +82,7 @@ body {
   background-color: #f9f9f9;
   overflow-x: clip;
   padding-top: 15px;
-  transition: 0.5s;
+  transition: width 0.5s;
   overflow-y: scroll;
   scrollbar-color:  black; /* only works for firefox */
   scrollbar-width: thin;
@@ -240,6 +240,12 @@ body {
   background-color: transparent;
   color: white;
   border: none;
+  /* 44px tap target around the 24px icon */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .PageButton {
@@ -499,6 +505,7 @@ body.mobile .leaflet-control-zoom { display: none; }
 .stop-head { display: flex; justify-content: space-between; gap: 8px; }
 .stop-name { text-align: left; font-weight: bold; font-size: 14px; }
 .stop-name:hover { text-decoration: underline; }
+.stop-direction { font-weight: normal; color: #6b7280; }
 .stop-row.focused { background: rgba(255, 204, 51, .18); box-shadow: inset 3px 0 0 #ffcc33; border-radius: 4px; padding-left: 6px; padding-right: 6px; }
 .focus-ring { animation: focus-pulse 1.4s ease-out infinite; transform-box: fill-box; transform-origin: center; }
 @keyframes focus-pulse { 0% { transform: scale(.6); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
@@ -524,6 +531,9 @@ body.mobile .leaflet-control-zoom { display: none; }
 .departures .delay-est { font-size: 11px; font-weight: 600; white-space: nowrap; border-radius: 999px; padding: 0 6px; cursor: help; }
 .departures .delay-est.late { background: #fff4e0; color: #8a5a00; }
 .departures .delay-est.early { background: #fde8e6; color: #a8231b; }
+.departures .delay-est.detour { background: #fde8e6; color: #a8231b; }
+.departures li:has(.detour) .time { text-decoration: line-through; opacity: .6; }
+.stop-popup-detour { font-size: 11px; font-weight: 600; white-space: nowrap; border-radius: 999px; padding: 0 6px; background: #fde8e6; color: #a8231b; cursor: help; }
 
 /* Service alerts */
 .alert-banner { position: absolute; top: calc(var(--header-h, 100px) + 10px); left: 50%; transform: translateX(-50%); z-index: 1001; width: min(560px, calc(100% - 24px)); display: flex; gap: 8px; align-items: flex-start; background: #fff4e0; border: 1px solid #f0b54a; color: #5c3900; border-radius: var(--ctl-radius); padding: 8px 10px; font-size: 13px; box-shadow: var(--ctl-shadow); }
@@ -652,3 +662,13 @@ input, button, select, textarea { font-family: inherit; }
 
 /* Route number tag above each bus or train */
 .route-tag { position: absolute; left: 0; top: -31px; transform: translateX(-50%); padding: 2px 5px; border-radius: 6px; border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); font: bold 11px/1 Arial, sans-serif; white-space: nowrap; background: #555; color: #fff; pointer-events: none; }
+
+/* UI baseline: keyboard focus, reduced motion, text wrapping */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid #7a0019; outline-offset: 2px; }
+:where(h1, h2, h3) { text-wrap: balance; }
+:where(p, li, figcaption) { text-wrap: pretty; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+#location-search-bar:focus-visible { outline: 2px solid #7a0019; outline-offset: 2px; }
+.departures .time { font-variant-numeric: tabular-nums; }

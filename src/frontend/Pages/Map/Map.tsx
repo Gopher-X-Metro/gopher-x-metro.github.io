@@ -274,6 +274,14 @@ export default function MapPage({ hidden, setPage, isMobile }) {
         }
     }, [map])
 
+    useEffect(() => {
+        // Escape closes an open bus or stop popup, wherever focus is
+        if (!map) return;
+        const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") map.closePopup(); };
+        document.addEventListener("keydown", onKey);
+        return () => document.removeEventListener("keydown", onKey);
+    }, [map])
+
     // The map lives for the whole session, so this only runs on unmount / hot reload
     useEffect(() => () => { basemapCleanup.current?.(); }, [])
 

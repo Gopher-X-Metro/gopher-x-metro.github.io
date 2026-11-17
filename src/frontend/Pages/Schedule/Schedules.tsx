@@ -13,7 +13,18 @@ import { ROUTE_NAMES } from "src/backend/RouteNames.ts";
 const CAMPUS_ROUTES = ["120", "121", "122", "123", "124", "125", "126"];
 const METRO_ROUTES = ["902", "901", "925", "2", "3"];
 
-const DAY_LABELS = { Weekday: "Monday–Friday", Saturday: "Saturday", Sunday: "Sunday" };
+// Campus routes missing from Metro Transit's schedule data, copied from bus.umn.edu (update each semester)
+const CAMPUS_ONLY: Record<string, { days: string, hours: string, every: string, stops: string[], asOf: string }> = {
+    "126": {
+        days: "Monday–Friday",
+        hours: "7:10 AM to 4:50 PM",
+        every: "10 minutes",
+        stops: ["Jones-Eddy Circle", "Cleveland & Como (northbound)", "St. Paul Student Center", "Cleveland & Como (southbound)", "Jones-Eddy Circle"],
+        asOf: "Fall 2026, Sep 8 – Dec 18",
+    },
+};
+
+const DAY_LABELS ={ Weekday: "Monday–Friday", Saturday: "Saturday", Sunday: "Sunday" };
 
 const DIRECTIONS = { NB: "Northbound", SB: "Southbound", EB: "Eastbound", WB: "Westbound" };
 
@@ -94,11 +105,25 @@ export default function Schedules({ hidden, setPage, initialRouteId }: { hidden:
 
             {schedule === undefined && <p className="schedules-note">Loading…</p>}
 
-            {schedule === null && (
+            {schedule === null && CAMPUS_ONLY[routeId] && (
+                <section className="schedule-day">
+                    <h2>{CAMPUS_ONLY[routeId].days}</h2>
+                    <p className="schedules-note">
+                        {CAMPUS_ONLY[routeId].hours}, every {CAMPUS_ONLY[routeId].every}. No departure timetable is published; buses run on a fixed interval.
+                    </p>
+                    <h3>Stops</h3>
+                    <ol className="campus-stops">{CAMPUS_ONLY[routeId].stops.map((stop, i) => <li key={i}>{stop}</li>)}</ol>
+                    <p className="schedules-note">
+                        From the University's <a href={`https://bus.umn.edu/${routeId}`} target="_blank" rel="noreferrer">route {routeId} page</a> ({CAMPUS_ONLY[routeId].asOf}). Check there for changes.
+                    </p>
+                </section>
+            )}
+
+            {schedule === null && !CAMPUS_ONLY[routeId] && (
                 <p className="schedules-note">
                     Metro Transit doesn't publish a schedule for this route. See the{" "}
-                    <a href="https://umn.rider.peaktransit.com" target="_blank" rel="noreferrer">campus rider site</a>{" "}
-                    or <a href="https://pts.umn.edu/transit/campus" target="_blank" rel="noreferrer">Parking & Transportation Services</a>.
+                    <a href={`https://bus.umn.edu/${routeId}`} target="_blank" rel="noreferrer">University's route page</a>{" "}
+                    or the <a href="https://umn.rider.peaktransit.com" target="_blank" rel="noreferrer">campus rider site</a>.
                 </p>
             )}
 

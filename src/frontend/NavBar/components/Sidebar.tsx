@@ -96,12 +96,14 @@ export default function SideBar() {
     return (
         <>
             <div id="navbar-toggle">
-                <button className="openbtn" onClick={() => setSidebarOpen(!sidebarOpen)}>
-                    <Icon as={GiHamburgerMenu} boxSize={6} />
+                <button className="openbtn" onClick={() => setSidebarOpen(!sidebarOpen)}
+                    aria-label="Routes menu" aria-expanded={sidebarOpen} aria-controls="nav-bar">
+                    <Icon as={GiHamburgerMenu} boxSize={6} aria-hidden="true" />
                 </button>
             </div>
 
-            <div id="nav-bar" className={sidebarOpen ? 'sidebar open' : 'sidebar'}>
+            {/* inert while closed: the 0-width sidebar is still in the DOM, so keep Tab and screen readers out of it */}
+            <div id="nav-bar" className={sidebarOpen ? 'sidebar open' : 'sidebar'} inert={!sidebarOpen}>
                 {[["Campus buses", true], ["Metro Transit", false]].map(([title, campus]) => (
                     <React.Fragment key={title as string}>
                         <h3 className="sidebar-heading">{title}</h3>

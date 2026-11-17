@@ -24,6 +24,8 @@ namespace Live {
         actual: boolean;
         description: string;
         direction: string;
+        /** Title of a posted campus detour that says this route won't serve this stop */
+        detour?: string;
     }
 
     export interface StopDepartures {
@@ -87,8 +89,11 @@ namespace Live {
         // No answer (offline, or Metro Transit down) is an error, not a stop with no buses
         if (!raw) throw new Error("Departures unavailable for stop " + stopId);
         const data = { ...raw, departures: await withCampusTimes(raw) };
+        const stopName = raw.stops?.[0]?.description ?? await getStopName(stopId) ?? "";
+        const skips = await getCampusSkips().catch(() => []);
         return {
             departures: (data.departures ?? []).map((d: any) => ({
+                detour: skippedBy(skips, d.route_id, stopName),
                 tripId: String(d.trip_id),
                 routeId: d.route_id,
                 routeName: d.route_short_name ?? d.route_id,
@@ -298,6 +303,52 @@ namespace Live {
         const stop = next ?? line.stops[0];
         return { stopId: stop.id, at: distance(bus.lat, bus.lng, stop.lat, stop.lng) < 40 };
     }
+
+    export interface CampusSkip { route: string; place: string; keyword: string; title: string; }
+
+    /**
+     * Stops that a campus detour posted for today says a route "will not serve"
+     * (Metro Transit's predictions don't know about campus detours, so its times there can't be trusted)
+     */
+    export async function getCampusSkips() : Promise<CampusSkip[]> {
+        const notices = await getCampusNotices(null, 2);
+        const skips: CampusSkip[] = [];
+        for (const notice of notices.filter(n => noticeActiveToday(n))) {
+            for (const sentence of (notice.description ?? "").split(/(?<=[.!?])\s+/)) {
+                const [before, list] = sentence.split(/will not serve/i);
+                if (list === undefined) continue;
+                const routes = before.match(/12[0-6]/g) ?? notice.routes;
+                const places = list.replace(/[.!]\s*$/, "").split(/,\s*(?:and|or)?\s*|\s+(?:and|or)\s+/).map(p => p.replace(/^the\s+/i, "").trim()).filter(Boolean);
+                for (const place of places) {
+                    const keyword = place.split(/\s+/).find(word => !GENERIC_PLACE_WORDS.has(word.toLowerCase()));
+                    if (keyword) routes.forEach(route => skips.push({ route, place, keyword, title: notice.title ?? "Campus detour" }));
+                }
+            }
+        }
+        return skips;
+    }
+
+    /** The detour that skips this route at this stop, if any */
+    export function skippedBy(skips: CampusSkip[], routeId: string, stopName: string) : string | undefined {
+        const skip = skips.find(s => s.route === routeId && new RegExp(`\\b${s.keyword.replace(/[^\w-]/g, "")}\\b`, "i").test(stopName));
+        return skip ? `${skip.title}: won't serve ${skip.place}` : undefined;
+    }
+
+    /**
+     * Whether a notice applies today: a date in its title ("11/16", "11/10-11/12") sets the days, running into the
+     * small hours of the next morning for late-night service; with no date, notices from the last day count
+     */
+    function noticeActiveToday(notice: Alert, now = new Date()) : boolean {
+        const m = (notice.title ?? "").match(/(\d{1,2})\/(\d{1,2})(?:\s*[-–]\s*(\d{1,2})\/(\d{1,2}))?/);
+        if (!m) return (notice.created ?? 0) > now.getTime() / 1000 - 86400;
+        const year = now.getFullYear();
+        const start = new Date(year, Number(m[1]) - 1, Number(m[2]));
+        const end = m[3] ? new Date(year, Number(m[3]) - 1, Number(m[4])) : new Date(start);
+        end.setDate(end.getDate() + 1); end.setHours(4);
+        return now >= start && now < end;
+    }
+
+    const GENERIC_PLACE_WORDS = new Set(["hall", "street", "st", "ave", "avenue", "memorial", "union", "mall", "circle", "center", "station", "building", "east", "west", "north", "south", "and", "or"]);
 
     /**
      * Gets recent campus bus notices (detours, game days) for campus routes on the map
